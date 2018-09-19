@@ -1,0 +1,185 @@
+---
+title: "Practical Machine Learning: Prediction Assignment Writeup"
+author: "Caroline Richardson"
+date: "September 19, 2018"
+output: 
+  html_document:
+    keep_md: true
+---
+
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, my goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data Background
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har
+
+## Load the Appropriate Libraries
+Load the libraries what will be used throughout the analysis
+
+```{r libraries, echo=TRUE, warning=FALSE, message=FALSE, cache=TRUE}
+library(caret)
+library(rattle)
+```
+
+## Load the Data
+Read the data files into R and assign data to **trainData** and **testData** variables
+
+```{r loadData, echo=TRUE, warning=FALSE}
+trainData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), header = TRUE)
+testData <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), header = TRUE)
+```
+
+## First Look at Training Data
+Take a look at the training data using the **str** function to better understand if data should be removed from rows or columns
+
+```{r explorTrain, echo=TRUE, warning=FALSE, cache=TRUE}
+str(trainData)
+```
+
+The training data consists of 19622 observations and 160 columns. However, many columns are missing values, therefore, we will remove those columns from the dataset. Additionally, the first seven columns report data regarding participants and timestamps, neither of which are important to the analysis. Thus, we will also remove the first seven columns.
+
+## Clean Training Data
+If a column has at least 90% blank or NA values, we will remove it from the dataset. Recall, we are also removing the first seven columns as well.
+
+```{r cleanTrainData, echo=TRUE, cache=TRUE}
+removeTrainCol <- which(colSums(is.na(trainData) |trainData=="")>0.9*dim(trainData)[1])
+trainDataClean <- trainData[, -removeTrainCol]
+trainDataClean <- trainDataClean[,-c(1:7)]
+dim(trainDataClean)
+```
+
+After cleaning, the new training data only has 53 columns.
+
+## First Look at Testing Data
+Take a look at the testing data using the **str** function to better understand if data should be removed from rows or columns
+
+```{r explorTest, echo=TRUE, warning=FALSE, cache=TRUE}
+str(testData)
+```
+
+The testing data consists of 20 observations and 160 columns. However, many columns are missing values, therefore, we will remove those columns from the dataset. Additionally, the first column reports data regarding participants, which is not important to the analysis. Thus, we will also remove the first column.
+
+## Clean Testing Data
+If a column has at least 90% blank or NA values, we will remove it from the dataset. Recall, we are also removing the first column as well.
+
+```{r cleanTestData, echo=TRUE, cache=TRUE}
+removeTestCol <- which(colSums(is.na(testData) |testData=="")>0.9*dim(testData)[1])
+testDataClean <- testData[, -removeTestCol]
+testDataClean <- testDataClean[,-1]
+dim(testDataClean)
+```
+
+After cleaning, the new testing data only has 59 columns.
+
+## Training Dataset: Create Partition
+Create a partition of the training dataset
+
+```{r trainPartition, echo=TRUE, cache=TRUE}
+set.seed(12345)
+inTrain1 <- createDataPartition(trainDataClean$classe, p=0.75, list=FALSE)
+train1 <- trainDataClean[inTrain1,]
+test1 <- trainDataClean[-inTrain1,]
+dim(train1)
+dim(test1)
+```
+
+## Testing Three Methods: Classification Tree, Random Forest, and Gradient Boosting Method
+
+We will be testing three methods in the following sections: classification tree, random forest, and the gradient boosting method. These methods fall into the technique of supervised learning, which trains a model on known input and output data so that it can predict future outputs. 
+
+We will also use the cross-validation technique with 5 folds to limit the effects of overfitting as well as improve the efficiency of the models. 
+
+```{r trControl, echo = TRUE, cache=TRUE}
+library(e1071)
+trControl <- trainControl(method = "cv", number = 5)
+```
+
+### Training: Classification Tree
+
+```{r classTree, echo=TRUE, cache=TRUE}
+methodCT <- train(classe~., data=train1, method="rpart", trControl = trControl)
+```
+
+Display the classification tree:
+
+```{r disClassTree, echo=TRUE, warning=FALSE, cache=TRUE}
+fancyRpartPlot(methodCT$finalModel)
+```
+
+Display the confusion matrix and the model accuracy
+
+```{r CTmatrixAcc, echo=TRUE, warning=FALSE, cache=TRUE}
+trainPred <- predict(methodCT, newdata = test1)
+confMatCT <- confusionMatrix(test1$classe, trainPred)
+confMatCT$table
+confMatCT$overall[1]
+```
+
+The accuracy of the classification tree method is quite low at approximately 55%. Thus, we can conclude that outcome class is not well predicted by the other predictors.
+
+### Training: Random Forest
+
+```{r randFor, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+methodRF <- train(classe~., data = train1, method="rf", trControl=trControl, verbose=FALSE)
+print(methodRF)
+```
+
+Plot the accuracy of the random forest method:
+
+```{r plotRF, echo=TRUE, warning=FALSE, cache=TRUE}
+plot(methodRF, main = "Accuracy of the Random Forest Method by Number of Predictors")
+```
+
+Display the confusion matrix and the model accuracy
+
+```{r RFmatrixAcc, echo=TRUE, warning=FALSE, cache=TRUE}
+trainPred2 <- predict(methodRF, newdata = test1)
+confMatRF <- confusionMatrix(test1$classe, trainPred2)
+confMatRF$table
+confMatRF$overall[1]
+```
+
+The accuracy of the random forest method is very good at approximately 99%. Let's see what kind of accuracy the gradient boosting method provides before drawing a final conclusion.
+
+### Training: Gradient Boosting Method
+
+```{r GBM, echo=TRUE, warning=FALSE, cache=TRUE, message=FALSE}
+methodGBM <- train(classe~., data = train1, method="gbm", trControl=trControl, verbose=FALSE)
+print(methodGBM)
+```
+
+Plot the accuracy of the gradient boosting method:
+
+```{r plotGBM, echo=TRUE, warning=FALSE, cache=TRUE}
+plot(methodGBM)
+```
+
+Display the confusion matrix and the model accuracy
+
+```{r GBMmatrixAcc, echo=TRUE, warning=FALSE, cache=TRUE}
+trainPred3 <- predict(methodGBM, newdata = test1)
+confMatGBM <- confusionMatrix(test1$classe, trainPred3)
+confMatGBM$table
+confMatGBM$overall[1]
+```
+
+The accuracy of the gradient boosting method is very good at approximately 96%, however, this accuaracy value is less than the random forest accuracy value of approximately 99%.
+
+## Conclusion
+
+The random forest method is best method since it has an accuracy of approximately 99%. Therefore, we will use this method to predict the values of classe for the test data.
+
+```{r finalTestPred, echo=TRUE, cache=TRUE, message=FALSE, warning=FALSE}
+finalTestPred <- predict(methodRF, newdata=testDataClean)
+finalTestPred
+```
+
+
+
